@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+           
             DataGridViewCellStyle dataGridViewCellStyle3 = new DataGridViewCellStyle();
             dataGridView1 = new DataGridView();
             buttonImport = new Button();

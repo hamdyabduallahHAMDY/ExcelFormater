@@ -13,10 +13,202 @@ namespace WinFormsApp1
         private IXLWorksheet sheet;
         private BindingSource bs = new BindingSource();
         private CheckBox headerCheckBox;
+        private readonly string _lastSessionFile =
+        Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "WinFormsApp1",
+        "LastGrid.xlsx"
+    );
+        private void SaveGridSilently()
+        {
+            try
+            {
+                if (dataGridView1.Rows.Count == 0)
+                    return;
+
+                Directory.CreateDirectory(Path.GetDirectoryName(_lastSessionFile));
+
+                using (var wb = new XLWorkbook())
+                {
+                    var ws = wb.Worksheets.Add("Data");
+
+                    int colIndex = 1;
+
+                    foreach (DataGridViewColumn col in dataGridView1.Columns)
+                    {
+                        if (col.Name == "chk" || col.Name == "btnDelete")
+                            continue;
+
+
+                        ws.Cell(1, colIndex).Value = col.HeaderText;
+                        ws.Cell(1, colIndex).Style.Font.Bold = true;
+                        colIndex++;
+                    }
+
+                    int rowIndex = 2;
+
+                    // Rows
+                    foreach (DataGridViewRow row in dataGridView1.Rows)
+                    {
+                        colIndex = 1;
+
+                        foreach (DataGridViewCell cell in row.Cells)
+                        {
+                            if (cell.OwningColumn.Name == "chk" || cell.OwningColumn.Name == "btnDelete")
+                                continue;
+
+
+
+                            ws.Cell(rowIndex, colIndex).Value =
+                                cell.FormattedValue?.ToString() ?? "";
+
+                            colIndex++;
+                        }
+
+                        rowIndex++;
+                    }
+
+                    ws.Columns().AdjustToContents();
+                    wb.SaveAs(_lastSessionFile);
+                }
+            }
+            catch
+            {
+                // SILENT by design — no MessageBox on shutdown
+            }
+        }
+
+        private void LoadLastGridIfExists()
+        {
+            try
+            {
+                if (!File.Exists(_lastSessionFile))
+                    return;
+
+                workbook = new XLWorkbook(_lastSessionFile);
+                sheet = workbook.Worksheet(1);
+
+                DataTable dt = new DataTable();
+
+                foreach (var cell in sheet.FirstRow().CellsUsed())
+                    dt.Columns.Add(cell.GetString().Trim());
+
+                foreach (var row in sheet.RowsUsed().Skip(1))
+                {
+                    DataRow dr = dt.NewRow();
+
+                    for (int i = 0; i < dt.Columns.Count; i++)
+                        dr[i] = row.Cell(i + 1).GetValue<string>();
+
+                    dt.Rows.Add(dr);
+                }
+
+                bs.DataSource = dt;
+                dataGridView1.DataSource = bs;
+
+                // Re-apply your Status logic
+                if (dataGridView1.Columns.Contains("Status"))
+                {
+                    int colIndex = dataGridView1.Columns["Status"].Index;
+                    dataGridView1.Columns.Remove("Status");
+
+                    DataGridViewComboBoxColumn statusCombo =
+                        new DataGridViewComboBoxColumn
+                        {
+                            Name = "Status",
+                            HeaderText = "Status",
+                            DataPropertyName = "Status",
+                            DisplayStyle = DataGridViewComboBoxDisplayStyle.Nothing
+                        };
+
+                    statusCombo.Items.Add("مدرج");
+                    statusCombo.Items.Add("غير مدرج");
+
+                    dataGridView1.Columns.Insert(colIndex, statusCombo);
+                }
+
+                if (!dataGridView1.Columns.Contains("chk"))
+                {
+                    DataGridViewCheckBoxColumn chk =
+                        new DataGridViewCheckBoxColumn
+                        {
+                            Name = "chk",
+                            Width = 40
+                        };
+
+                    dataGridView1.Columns.Insert(0, chk);
+                }
+
+                AddHeaderCheckBox();
+                AddDeleteButtonColumn();
+
+                UpdateRowCount();
+            }
+            catch
+            {
+                // Silent load failure = app still opens
+            }
+        }
+
+        private void dataGridView1_CellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0)
+                return;
+
+            if (dataGridView1.Columns[e.ColumnIndex].Name != "btnDelete")
+                return;
+
+            // optional confirmation
+            if (MessageBox.Show(
+                    "Delete this row?",
+                    "Confirm",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning
+                ) != DialogResult.Yes)
+                return;
+
+            // 🔥 THIS LINE IS THE FIX
+            bs.RemoveAt(e.RowIndex);
+
+            UpdateRowCount();
+        }
 
         public Form1()
         {
+
             InitializeComponent();
+            dataGridView1.CellClick += dataGridView1_CellClick;
+
+            this.Load += (s, e) => LoadLastGridIfExists();
+            this.FormClosing += (s, e) =>
+            {
+                dataGridView1.EndEdit();
+                SaveGridSilently();
+            };
+            dataGridView1.DataError += dataGridView1_DataError;
+
+
+        }
+
+        private void AddDeleteButtonColumn()
+        {
+            if (dataGridView1.Columns.Contains("btnDelete"))
+                return;
+
+            DataGridViewButtonColumn btn =
+                new DataGridViewButtonColumn
+                {
+                    Name = "btnDelete",
+                    HeaderText = "",
+                    Text = "🗑️",
+                    UseColumnTextForButtonValue = true,
+                    Width = 40,
+                    FlatStyle = FlatStyle.Flat
+                };
+
+            // Insert AFTER checkbox
+            int chkIndex = dataGridView1.Columns["chk"].Index;
+            dataGridView1.Columns.Insert(chkIndex + 1, btn);
         }
 
         private void button1_Click(object sender, EventArgs e)
@@ -70,6 +262,7 @@ namespace WinFormsApp1
                 dataGridView1.AutoGenerateColumns = true;
                 bs.DataSource = dt;
                 dataGridView1.DataSource = bs;
+
                 // Replace Status column with ComboBox
                 if (dataGridView1.Columns.Contains("Status"))
                 {
@@ -94,20 +287,20 @@ namespace WinFormsApp1
                     // Insert it back in the same position
                     dataGridView1.Columns.Insert(colIndex, statusCombo);
                 }
+                // 🔧 Normalize Status values BEFORE binding
                 if (dt.Columns.Contains("Status"))
                 {
                     foreach (DataRow row in dt.Rows)
                     {
                         string raw = row["Status"]?.ToString().Trim();
 
-                        if (raw == "1")
+                        if (raw == "1" || raw == "مدرج")
                             row["Status"] = "مدرج";
-                        else if (raw == "0")
-                            row["Status"] = "غير مدرج";
-                        else if (string.IsNullOrEmpty(raw))
-                            row["Status"] = "غير مدرج"; // safe default
+                        else
+                            row["Status"] = "غير مدرج"; // default fallback
                     }
                 }
+
 
                 // Add checkbox column (only once)
                 // Add checkbox column (only once)
@@ -115,6 +308,7 @@ namespace WinFormsApp1
                 {
                     DataGridViewCheckBoxColumn chk = new DataGridViewCheckBoxColumn();
                     chk.Name = "chk";
+                    chk.DataPropertyName = ""; // 🔥 UNBOUND
                     chk.HeaderText = "";
                     chk.Width = 40;
                     chk.ReadOnly = false;
@@ -122,8 +316,10 @@ namespace WinFormsApp1
                     dataGridView1.Columns.Insert(0, chk);
                 }
                 AddHeaderCheckBox();
+                AddDeleteButtonColumn();
 
                 UpdateRowCount();
+
                 MessageBox.Show("Excel loaded successfully.");
             }
             catch (Exception ex)
@@ -133,6 +329,12 @@ namespace WinFormsApp1
 
 
         }
+        private void dataGridView1_DataError(object sender, DataGridViewDataErrorEventArgs e)
+        {
+            // swallow combo errors silently
+            e.ThrowException = false;
+        }
+
 
         private async void button2_Click(object sender, EventArgs e)
         {
@@ -247,8 +449,9 @@ namespace WinFormsApp1
             // 2️⃣ Render rows
             foreach (DataGridViewCell cell in row.Cells)
             {
-                if (cell.OwningColumn.Name == "chk")
+                if (cell.OwningColumn.Name == "chk" || cell.OwningColumn.Name == "btnDelete")
                     continue;
+
 
                 sb.Append($@"
     <div class='row'>
@@ -324,8 +527,9 @@ namespace WinFormsApp1
                 // 1️⃣ Write headers
                 foreach (DataGridViewColumn col in dataGridView1.Columns)
                 {
-                    if (col.Name == "chk") // skip checkbox column
+                    if (col.Name == "chk" || col.Name == "btnDelete")
                         continue;
+
 
                     ws.Cell(1, excelCol).Value = col.HeaderText;
                     ws.Cell(1, excelCol).Style.Font.Bold = true;
@@ -341,8 +545,9 @@ namespace WinFormsApp1
 
                     foreach (DataGridViewCell cell in row.Cells)
                     {
-                        if (cell.OwningColumn.Name == "chk")
+                        if (cell.OwningColumn.Name == "chk" || cell.OwningColumn.Name == "btnDelete")
                             continue;
+                        
 
                         ws.Cell(excelRow, excelCol).Value =
                             cell.FormattedValue?.ToString() ?? "";
@@ -392,8 +597,9 @@ namespace WinFormsApp1
                         // 1️⃣ Headers
                         foreach (DataGridViewColumn col in dataGridView1.Columns)
                         {
-                            if (col.Name == "chk")
+                            if (col.Name == "chk" || col.Name == "btnDelete")
                                 continue;
+
 
                             ws.Cell(1, excelCol).Value = col.HeaderText;
                             ws.Cell(1, excelCol).Style.Font.Bold = true;
@@ -404,8 +610,9 @@ namespace WinFormsApp1
                         excelCol = 1;
                         foreach (DataGridViewCell cell in row.Cells)
                         {
-                            if (cell.OwningColumn.Name == "chk")
+                            if (cell.OwningColumn.Name == "chk" || cell.OwningColumn.Name == "btnDelete")
                                 continue;
+
 
                             ws.Cell(2, excelCol).Value =
                                 cell.FormattedValue?.ToString() ?? "";
