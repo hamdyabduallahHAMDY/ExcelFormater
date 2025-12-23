@@ -181,7 +181,6 @@ namespace WinFormsApp1
             InitializeComponent();
             dataGridView1.CellClick += dataGridView1_CellClick;
 
-            this.Load += (s, e) => LoadLastGridIfExists();
             this.FormClosing += (s, e) =>
             {
                 dataGridView1.EndEdit();
@@ -241,15 +240,16 @@ namespace WinFormsApp1
 
             DataTable dt = LoadExcelToDataTable(grid);
 
-            SubForm frm = new SubForm();
-            frm.SetData1(dt);
+            _subFormInstance = new SubForm();
+            _subFormInstance.SetData1(dt);
 
-            frm.FormClosed += (s, e) =>
+            _subFormInstance.FormClosed += (s, e) =>
             {
-                RemoveSubFormFlag();
+                _subFormInstance = null;
             };
 
-            frm.Show();
+            _subFormInstance.Show();
+
         }
 
         private void AddDeleteButtonColumn()
@@ -931,15 +931,26 @@ namespace WinFormsApp1
                 return;
             }
 
+            // Close previous SubForm if exists
+            if (_subFormInstance != null && !_subFormInstance.IsDisposed)
+            {
+                _subFormInstance.Close();
+            }
+
+            // Create new SubForm
             _subFormInstance = new SubForm();
             _subFormInstance.SetData1(result);
 
+            // 🔥 SAVE IMMEDIATELY (THIS IS THE KEY)
+            _subFormInstance.SaveNow();
+
             _subFormInstance.FormClosed += (s, e) =>
             {
-                _subFormInstance = null;   // 🔥 track state only
+                _subFormInstance = null;
             };
 
             _subFormInstance.Show();
+
 
 
         }

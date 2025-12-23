@@ -85,6 +85,15 @@ namespace WinFormsApp1
                 // silent by design
             }
         }
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            SaveSubGridSilently();   // 🔥 REQUIRED
+            base.OnFormClosing(e);
+        }
+        public void SaveNow()
+        {
+            SaveSubGridSilently();
+        }
 
     }
 
