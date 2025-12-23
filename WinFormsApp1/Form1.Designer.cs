@@ -28,8 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
-           
-            DataGridViewCellStyle dataGridViewCellStyle3 = new DataGridViewCellStyle();
+            DataGridViewCellStyle dataGridViewCellStyle2 = new DataGridViewCellStyle();
             dataGridView1 = new DataGridView();
             buttonImport = new Button();
             buttonRowPdf = new Button();
@@ -37,6 +36,7 @@
             buttonRowExcel = new Button();
             txtSearch = new TextBox();
             topPanel = new Panel();
+            button2 = new Button();
             button1 = new Button();
             dateTimePicker2 = new DateTimePicker();
             label2 = new Label();
@@ -52,14 +52,14 @@
             // 
             dataGridView1.BackgroundColor = Color.White;
             dataGridView1.BorderStyle = BorderStyle.None;
-            dataGridViewCellStyle3.Alignment = DataGridViewContentAlignment.MiddleLeft;
-            dataGridViewCellStyle3.BackColor = Color.FromArgb(230, 233, 236);
-            dataGridViewCellStyle3.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
-            dataGridViewCellStyle3.ForeColor = SystemColors.WindowText;
-            dataGridViewCellStyle3.SelectionBackColor = SystemColors.Highlight;
-            dataGridViewCellStyle3.SelectionForeColor = SystemColors.HighlightText;
-            dataGridViewCellStyle3.WrapMode = DataGridViewTriState.True;
-            dataGridView1.ColumnHeadersDefaultCellStyle = dataGridViewCellStyle3;
+            dataGridViewCellStyle2.Alignment = DataGridViewContentAlignment.MiddleLeft;
+            dataGridViewCellStyle2.BackColor = Color.FromArgb(230, 233, 236);
+            dataGridViewCellStyle2.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            dataGridViewCellStyle2.ForeColor = SystemColors.WindowText;
+            dataGridViewCellStyle2.SelectionBackColor = SystemColors.Highlight;
+            dataGridViewCellStyle2.SelectionForeColor = SystemColors.HighlightText;
+            dataGridViewCellStyle2.WrapMode = DataGridViewTriState.True;
+            dataGridView1.ColumnHeadersDefaultCellStyle = dataGridViewCellStyle2;
             dataGridView1.Dock = DockStyle.Fill;
             dataGridView1.EnableHeadersVisualStyles = false;
             dataGridView1.Location = new Point(0, 141);
@@ -119,6 +119,7 @@
             // topPanel
             // 
             topPanel.BackColor = Color.FromArgb(245, 247, 250);
+            topPanel.Controls.Add(button2);
             topPanel.Controls.Add(button1);
             topPanel.Controls.Add(dateTimePicker2);
             topPanel.Controls.Add(label2);
@@ -136,6 +137,16 @@
             topPanel.Padding = new Padding(10);
             topPanel.Size = new Size(900, 141);
             topPanel.TabIndex = 1;
+            // 
+            // button2
+            // 
+            button2.Location = new Point(616, 73);
+            button2.Name = "button2";
+            button2.Size = new Size(120, 23);
+            button2.TabIndex = 11;
+            button2.Text = "button2";
+            button2.UseVisualStyleBackColor = true;
+            button2.Click += button2_Click_1;
             // 
             // button1
             // 
@@ -195,7 +206,6 @@
             label3.Size = new Size(41, 15);
             label3.TabIndex = 5;
             label3.Text = "Rows :";
-           
             // 
             // Form1
             // 
@@ -232,5 +242,6 @@
         private DateTimePicker dateTimePicker1;
         private Button button1;
         private Label label3;
+        private Button button2;
     }
 }

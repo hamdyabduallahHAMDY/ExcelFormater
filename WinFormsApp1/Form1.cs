@@ -13,6 +13,8 @@ namespace WinFormsApp1
         private IXLWorksheet sheet;
         private BindingSource bs = new BindingSource();
         private CheckBox headerCheckBox;
+        private SubForm _subFormInstance;
+
         private readonly string _lastSessionFile =
         Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -184,10 +186,70 @@ namespace WinFormsApp1
             {
                 dataGridView1.EndEdit();
                 SaveGridSilently();
+
+                SaveSubFormStateIfNeeded();
             };
+
             dataGridView1.DataError += dataGridView1_DataError;
+            this.Load += (s, e) =>
+            {
+                LoadLastGridIfExists();
+                RestoreSubFormIfNeeded();
+            };
 
 
+        }
+        private void SaveSubFormStateIfNeeded()
+        {
+            string basePath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WinFormsApp1"
+            );
+
+            string flag = Path.Combine(basePath, "SubFormOpen.flag");
+
+            if (_subFormInstance != null && !_subFormInstance.IsDisposed)
+            {
+                Directory.CreateDirectory(basePath);
+                File.WriteAllText(flag, "OPEN");
+            }
+            else
+            {
+                if (File.Exists(flag))
+                    File.Delete(flag);
+            }
+        }
+
+        private void RestoreSubFormIfNeeded()
+        {
+            string flag =
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "WinFormsApp1",
+                    "SubFormOpen.flag"
+                );
+
+            string grid =
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "WinFormsApp1",
+                    "SubGrid.xlsx"
+                );
+
+            if (!File.Exists(flag) || !File.Exists(grid))
+                return;
+
+            DataTable dt = LoadExcelToDataTable(grid);
+
+            SubForm frm = new SubForm();
+            frm.SetData1(dt);
+
+            frm.FormClosed += (s, e) =>
+            {
+                RemoveSubFormFlag();
+            };
+
+            frm.Show();
         }
 
         private void AddDeleteButtonColumn()
@@ -547,7 +609,7 @@ namespace WinFormsApp1
                     {
                         if (cell.OwningColumn.Name == "chk" || cell.OwningColumn.Name == "btnDelete")
                             continue;
-                        
+
 
                         ws.Cell(excelRow, excelCol).Value =
                             cell.FormattedValue?.ToString() ?? "";
@@ -821,10 +883,101 @@ namespace WinFormsApp1
 
         }
 
+        private void button2_Click_1(object sender, EventArgs e)
+        {
+            // 1️⃣ Ensure first Excel is loaded
+            if (bs.DataSource == null)
+            {
+                MessageBox.Show("Load the first Excel file first.");
+                return;
+            }
 
-   
+            // 2️⃣ Choose second Excel
+            OpenFileDialog ofd = new OpenFileDialog();
+            ofd.Filter = "Excel Files (*.xlsx)|*.xlsx";
 
-     
+            if (ofd.ShowDialog() != DialogResult.OK)
+                return;
+
+            // 3️⃣ Get OLD data (already loaded)
+            DataTable oldDt = ((DataTable)bs.DataSource).Copy();
+
+            // 4️⃣ Load NEW Excel
+            DataTable newDt = LoadExcelToDataTable(ofd.FileName);
+
+            // 5️⃣ Extract Name values from NEW Excel
+            HashSet<string> newNames = new HashSet<string>(
+                newDt.AsEnumerable()
+                     .Select(r => r["Name"]?.ToString().Trim().ToLower())
+                     .Where(n => !string.IsNullOrWhiteSpace(n))
+            );
+
+            // 6️⃣ Filter OLD Excel rows
+            DataTable result = oldDt.Clone();
+
+            foreach (DataRow row in oldDt.Rows)
+            {
+                string name = row["Name"]?.ToString().Trim().ToLower();
+                if (newNames.Contains(name))
+                {
+                    result.ImportRow(row);
+                }
+            }
+
+            // 7️⃣ Show result in SubForm
+            if (result.Rows.Count == 0)
+            {
+                MessageBox.Show("No matching names found.");
+                return;
+            }
+
+            _subFormInstance = new SubForm();
+            _subFormInstance.SetData1(result);
+
+            _subFormInstance.FormClosed += (s, e) =>
+            {
+                _subFormInstance = null;   // 🔥 track state only
+            };
+
+            _subFormInstance.Show();
+
+
+        }
+
+        private void RemoveSubFormFlag()
+        {
+            string flag =
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "WinFormsApp1",
+                    "SubFormOpen.flag"
+                );
+
+            if (File.Exists(flag))
+                File.Delete(flag);
+        }
+
+        private DataTable LoadExcelToDataTable(string path)
+        {
+            using var wb = new XLWorkbook(path);
+            var ws = wb.Worksheet(1);
+
+            DataTable dt = new DataTable();
+
+            foreach (var cell in ws.FirstRow().CellsUsed())
+                dt.Columns.Add(cell.GetString().Trim());
+
+            foreach (var row in ws.RowsUsed().Skip(1))
+            {
+                DataRow dr = dt.NewRow();
+                for (int i = 0; i < dt.Columns.Count; i++)
+                    dr[i] = row.Cell(i + 1).GetValue<string>();
+                dt.Rows.Add(dr);
+            }
+
+            return dt;
+        }
+       
     }
 
 }
