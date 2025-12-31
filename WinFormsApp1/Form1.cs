@@ -3,10 +3,15 @@ using iText.Kernel.Pdf;
 using iText.Layout;
 using iText.Layout.Element;
 using System.Data;
+using Microsoft.Web.WebView2.WinForms;
 using System.Text;
+using System.Text.Json;
+using Microsoft.VisualBasic;
+
 
 namespace WinFormsApp1
 {
+
     public partial class Form1 : Form
     {
         private XLWorkbook workbook;
@@ -14,6 +19,9 @@ namespace WinFormsApp1
         private BindingSource bs = new BindingSource();
         private CheckBox headerCheckBox;
         private SubForm _subFormInstance;
+        private WebView2 webView;
+
+        private DataTable _dt; // store data for rendering
 
         private readonly string _lastSessionFile =
         Path.Combine(
@@ -100,8 +108,27 @@ namespace WinFormsApp1
                     DataRow dr = dt.NewRow();
 
                     for (int i = 0; i < dt.Columns.Count; i++)
-                        dr[i] = row.Cell(i + 1).GetValue<string>();
+                    {
+                        var cell = row.Cell(i + 1);
+                        string val;
 
+                        if (dt.Columns[i].ColumnName == "Status")
+                        {
+                            if (cell.DataType == XLDataType.Boolean)
+                                val = cell.GetBoolean() ? "1" : "0";
+                            else if (cell.DataType == XLDataType.Number)
+                                val = cell.GetDouble().ToString("0");
+                            else
+                                val = cell.Value.ToString();
+                        }
+                        else
+                        {
+                            val = cell.Value.ToString();
+                        }
+
+                        dr[i] = val;
+
+                    }
                     dt.Rows.Add(dr);
                 }
 
@@ -175,29 +202,240 @@ namespace WinFormsApp1
             UpdateRowCount();
         }
 
+        private async void LoadHtmlUI()
+        {
+            await webView.EnsureCoreWebView2Async();
+            webView.CoreWebView2.WebMessageReceived += WebView_WebMessageReceived;
+
+            string htmlPath = Path.Combine(
+
+                "C:\\Users\\body1\\source\\repos\\WinFormsApp1\\WinFormsApp1\\UI\\form1.html"
+            );
+
+            if (!File.Exists(htmlPath))
+            {
+                MessageBox.Show(
+                    "HTML NOT FOUND:\n" + htmlPath,
+                    "ERROR",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+                return;
+            }
+
+            webView.CoreWebView2.Navigate(htmlPath);
+        }
+
+        private void SendGridToHtml()
+        {
+            if (bs.DataSource == null || webView?.CoreWebView2 == null)
+                return;
+
+            DataTable dt = (DataTable)bs.DataSource;
+
+            var columns = dt.Columns
+                .Cast<DataColumn>()
+                .Where(c => c.ColumnName != "__rowId")
+                .Select(c => c.ColumnName)
+                .ToList();
+
+            var rows = new List<Dictionary<string, string>>();
+
+            foreach (DataRow r in dt.Rows)
+            {
+                var obj = new Dictionary<string, string>();
+
+                obj["__rowId"] = r["__rowId"].ToString();
+
+                foreach (string c in columns)
+                {
+                    string val = r[c]?.ToString() ?? "";
+
+                    // 🔥 Normalize Status HERE
+                    if (c == "Status")
+                    {
+                        val = val.Trim();
+
+                        if (val == "1")
+                            val = "غير مدرج";   // GREEN
+                        else if (val == "0")
+                            val = "مدرج";       // RED
+                    }
+
+                    obj[c] = val;
+                }
+                rows.Add(obj);
+            }
+
+            var payload = new
+            {
+                columns,
+                rows
+            };
+
+            string json = System.Text.Json.JsonSerializer.Serialize(payload);
+            foreach (DataRow r in ((DataTable)bs.DataSource).Rows)
+            {
+                MessageBox.Show(
+                    $"STATUS=[{r["Status"]}]\nLEN={r["Status"].ToString().Length}",
+                    "DEBUG STATUS"
+                );
+                break; // show only first row
+            }
+
+            webView.CoreWebView2.ExecuteScriptAsync(
+                $"renderMainGrid({json});"
+            );
+        }
+        private void WebView_WebMessageReceived(
+            object? sender,
+            Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            string msg = e.TryGetWebMessageAsString();
+
+            // -----------------------------
+            // 1️⃣ HANDLE STRING COMMANDS
+            // -----------------------------
+            switch (msg)
+            {
+                case "import-excel":
+                    button1_Click(null, EventArgs.Empty);
+                    return;
+
+                case "export-all-excel":
+                    button3_Click(null, EventArgs.Empty);
+                    return;
+
+                case "export-row-excel":
+                    button4_Click(null, EventArgs.Empty);
+                    return;
+
+                case "export-row-pdf":
+                    button2_Click(null, EventArgs.Empty);
+                    return;
+
+                case "compare-excel":
+                    button2_Click_1(null, EventArgs.Empty);
+                    return;
+            }
+
+            // -----------------------------
+            // 2️⃣ IGNORE NON-JSON MESSAGES
+            // -----------------------------
+            if (string.IsNullOrWhiteSpace(msg) || !msg.TrimStart().StartsWith("{"))
+                return;
+
+            // -----------------------------
+            // 3️⃣ HANDLE JSON ACTIONS
+            // -----------------------------
+            try
+            {
+                using var doc = JsonDocument.Parse(msg);
+                var root = doc.RootElement;
+
+                if (!root.TryGetProperty("action", out var actionProp))
+                    return;
+
+                string action = actionProp.GetString();
+
+                // -------------------------
+                // UPDATE STATUS
+                // -------------------------
+                if (action == "update-status")
+                {
+                    string rowId = root.GetProperty("rowId").GetString();
+                    string newVal = root.GetProperty("value").GetString();
+
+                    DataTable dt = (DataTable)bs.DataSource;
+
+                    var row = dt.AsEnumerable()
+                                .FirstOrDefault(r => r["__rowId"]?.ToString() == rowId);
+
+                    if (row != null)
+                        row["Status"] = newVal;
+
+                    SaveGridSilently();
+                    SendGridToHtml(); // 🔥 re-render ONCE
+                }
+
+                // -------------------------
+                // DELETE ROWS
+                // -------------------------
+                else if (action == "delete-rows")
+                {
+                    var ids = root.GetProperty("rowIds")
+                                  .EnumerateArray()
+                                  .Select(x => x.GetString())
+                                  .Where(x => !string.IsNullOrWhiteSpace(x))
+                                  .ToList();
+
+                    DataTable dt = (DataTable)bs.DataSource;
+
+                    for (int i = dt.Rows.Count - 1; i >= 0; i--)
+                    {
+                        string id = dt.Rows[i]["__rowId"]?.ToString();
+                        if (ids.Contains(id))
+                            dt.Rows.RemoveAt(i);
+                    }
+
+                    SaveGridSilently();
+                    SendGridToHtml(); // 🔥 re-render ONCE
+                }
+
+                // -------------------------
+                // DEBUG (optional)
+                // -------------------------
+                else if (action == "debug")
+                {
+                    MessageBox.Show(msg);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("JS message error:\n" + ex.Message);
+            }
+        }
+
         public Form1()
         {
-
             InitializeComponent();
+
+            // 🔥 HIDE OLD WINFORMS UI (VERY IMPORTANT)
+            topPanel.Visible = false;
+            dataGridView1.Visible = false;
+            label3.Visible = false;
+
+            // 🔥 CREATE WEBVIEW
+            webView = new WebView2
+            {
+                Dock = DockStyle.Fill
+            };
+
+            this.Controls.Add(webView);
+            webView.BringToFront();
+
+            // 🔥 LOAD HTML UI
+            LoadHtmlUI();
+
+            // KEEP ALL YOUR EXISTING LOGIC BELOW
             dataGridView1.CellClick += dataGridView1_CellClick;
 
             this.FormClosing += (s, e) =>
             {
                 dataGridView1.EndEdit();
                 SaveGridSilently();
-
                 SaveSubFormStateIfNeeded();
             };
 
             dataGridView1.DataError += dataGridView1_DataError;
+
             this.Load += (s, e) =>
             {
                 LoadLastGridIfExists();
                 RestoreSubFormIfNeeded();
             };
-
-
         }
+
         private void SaveSubFormStateIfNeeded()
         {
             string basePath = Path.Combine(
@@ -277,110 +515,71 @@ namespace WinFormsApp1
         {
             try
             {
-                OpenFileDialog ofd = new OpenFileDialog();
-                ofd.Filter = "Excel Files (*.xlsx)|*.xlsx";
+                OpenFileDialog ofd = new OpenFileDialog
+                {
+                    Filter = "Excel Files (*.xlsx)|*.xlsx"
+                };
 
                 if (ofd.ShowDialog() != DialogResult.OK)
                     return;
 
-                workbook = new XLWorkbook(ofd.FileName);
-                sheet = workbook.Worksheet(1);
+                using var workbook = new XLWorkbook(ofd.FileName);
+                var sheet = workbook.Worksheet(1);
 
                 DataTable dt = new DataTable();
 
-                // 1) Create columns from first row
+                // 1) Create columns
                 foreach (var cell in sheet.FirstRow().CellsUsed())
-                {
                     dt.Columns.Add(cell.GetString().Trim());
-                }
 
-                // 2) Read Excel rows
+                // 2) Read rows
                 foreach (var row in sheet.RowsUsed().Skip(1))
                 {
                     DataRow dr = dt.NewRow();
 
                     for (int i = 0; i < dt.Columns.Count; i++)
                     {
-                        dr[i] = row.Cell(i + 1).GetValue<string>();
+                        string val = row.Cell(i + 1).Value.ToString();
+
+                        // 🔥 CLEAN UNICODE GARBAGE HERE
+                        val = val
+                            .Replace("\u200F", "")
+                            .Replace("\u00A0", " ")
+                            .Trim();
+
+                        dr[i] = val;
                     }
 
                     dt.Rows.Add(dr);
                 }
 
-                // 3) Convert Status column values (NO extra column)
-                if (dt.Columns.Contains("status"))
-                {
-                    foreach (DataRow row in dt.Rows)
-                    {
-                        string val = row["Status"]?.ToString().Trim();
+                // 3) Add row id
+                dt.Columns.Add("__rowId");
+                foreach (DataRow r in dt.Rows)
+                    r["__rowId"] = Guid.NewGuid().ToString();
 
-                        if (val == "1")
-                            row["status"] = "مدرج";
-                        else if (val == "0")
-                            row["status"] = "غير مدرج";
-                    }
-                }
-
-                dataGridView1.AutoGenerateColumns = true;
-                bs.DataSource = dt;
-                dataGridView1.DataSource = bs;
-
-                // Replace Status column with ComboBox
-                if (dataGridView1.Columns.Contains("Status"))
-                {
-                    int colIndex = dataGridView1.Columns["Status"].Index;
-
-                    // Remove the original text column
-                    dataGridView1.Columns.Remove("Status");
-
-                    // Create ComboBox column
-                    DataGridViewComboBoxColumn statusCombo = new DataGridViewComboBoxColumn();
-                    statusCombo.Name = "Status";
-                    statusCombo.HeaderText = "Status";
-                    statusCombo.DataPropertyName = "Status"; // bind to same column
-                    statusCombo.DropDownWidth = 100;
-                    statusCombo.FlatStyle = FlatStyle.Standard;
-
-                    statusCombo.Items.Add("مدرج");
-                    statusCombo.Items.Add("غير مدرج");
-
-                    statusCombo.DisplayStyle = DataGridViewComboBoxDisplayStyle.Nothing;
-
-                    // Insert it back in the same position
-                    dataGridView1.Columns.Insert(colIndex, statusCombo);
-                }
-                // 🔧 Normalize Status values BEFORE binding
+                // 4) Normalize Status ONCE
                 if (dt.Columns.Contains("Status"))
                 {
-                    foreach (DataRow row in dt.Rows)
+                    foreach (DataRow r in dt.Rows)
                     {
-                        string raw = row["Status"]?.ToString().Trim();
+                        string raw = r["Status"]?.ToString()
+                            .Replace("\u200F", "")
+                            .Replace("\u00A0", " ")
+                            .Trim();
 
-                        if (raw == "1" || raw == "مدرج")
-                            row["Status"] = "مدرج";
+                        if (raw.Contains("غير"))
+                            r["Status"] = "غير مدرج";
                         else
-                            row["Status"] = "غير مدرج"; // default fallback
+                            r["Status"] = "مدرج";
                     }
                 }
 
+                // 5) Bind ONLY as data source
+                bs.DataSource = dt;
 
-                // Add checkbox column (only once)
-                // Add checkbox column (only once)
-                if (!dataGridView1.Columns.Contains("chk"))
-                {
-                    DataGridViewCheckBoxColumn chk = new DataGridViewCheckBoxColumn();
-                    chk.Name = "chk";
-                    chk.DataPropertyName = ""; // 🔥 UNBOUND
-                    chk.HeaderText = "";
-                    chk.Width = 40;
-                    chk.ReadOnly = false;
-
-                    dataGridView1.Columns.Insert(0, chk);
-                }
-                AddHeaderCheckBox();
-                AddDeleteButtonColumn();
-
-                UpdateRowCount();
+                // 6) Send to HTML
+                SendGridToHtml();
 
                 MessageBox.Show("Excel loaded successfully.");
             }
@@ -388,15 +587,13 @@ namespace WinFormsApp1
             {
                 MessageBox.Show("Error loading Excel: " + ex.Message);
             }
-
-
         }
+
         private void dataGridView1_DataError(object sender, DataGridViewDataErrorEventArgs e)
         {
             // swallow combo errors silently
             e.ThrowException = false;
         }
-
 
         private async void button2_Click(object sender, EventArgs e)
         {
@@ -968,27 +1165,34 @@ namespace WinFormsApp1
                 File.Delete(flag);
         }
 
-        private DataTable LoadExcelToDataTable(string path)
+        private static DataTable LoadExcelToDataTable(string path)
         {
             using var wb = new XLWorkbook(path);
             var ws = wb.Worksheet(1);
 
             DataTable dt = new DataTable();
 
+            // headers
             foreach (var cell in ws.FirstRow().CellsUsed())
-                dt.Columns.Add(cell.GetString().Trim());
+                dt.Columns.Add(cell.Value.ToString().Trim());
 
+            // rows
             foreach (var row in ws.RowsUsed().Skip(1))
             {
                 DataRow dr = dt.NewRow();
+
                 for (int i = 0; i < dt.Columns.Count; i++)
-                    dr[i] = row.Cell(i + 1).GetValue<string>();
+                {
+                    dr[i] = row.Cell(i + 1).Value.ToString();
+                }
+
                 dt.Rows.Add(dr);
             }
 
             return dt;
         }
-       
+
+
     }
 
 }

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Excel Manager</title>
+    <link rel="stylesheet" href="Form1.css" />
+</head>
+<body>
+    <div class="topbar">
+        <div class="btnrow">
+            <button id="btnImport">📥 Import Excel</button>
+            <button id="btnExportAll">📤 Export All Excel</button>
+            <button id="btnExportSelectedExcel">📄 Excel / Selected</button>
+            <button id="btnExportSelectedPdf">🧾 PDF / Selected</button>
+            <button id="btnCompare">🔁 Compare Excel</button>
+        </div>
+
+        <div class="filters">
+            <div class="field">
+                <label>Search</label>
+                <input id="txtSearch" type="text" placeholder="Type to search..." />
+            </div>
+
+            <div class="field">
+                <label>From</label>
+                <input id="dateFrom" type="date" />
+            </div>
+
+            <div class="field">
+                <label>To</label>
+                <input id="dateTo" type="date" />
+            </div>
+
+            <button id="btnApplyFilters">📄 Apply Filters</button>
+            <button id="btnClearFilters" class="ghost">✖ Clear</button>
+        </div>
+    </div>
+
+    <div class="tablewrap">
+        <table id="dataGrid">
+            <thead></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="footer">
+        <div class="left">
+            <label class="selectAll">
+                <input type="checkbox" id="chkAll" />
+                Select all (visible)
+            </label>
+
+            <button id="btnDeleteSelected" class="danger">🗑 Delete Selected</button>
+        </div>
+
+        <div class="right">
+            <span id="rowCount">Rows: 0</span>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

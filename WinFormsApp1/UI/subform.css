@@ -1,0 +1,45 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, Arial, sans-serif;
+    background: #f4f6f8;
+    color: #111827;
+}
+
+.tablewrap {
+    height: 100vh;
+    overflow: auto;
+    padding: 12px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+thead th {
+    position: sticky;
+    top: 0;
+    background: #e6e9ec;
+    font-weight: 700;
+    text-align: left;
+    padding: 10px;
+    border-bottom: 1px solid #d1d5db;
+    z-index: 1;
+}
+
+tbody td {
+    padding: 10px;
+    border-bottom: 1px solid #eef2f7;
+}
+
+tbody tr:hover {
+    background: #f8fafc;
+}
